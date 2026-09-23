@@ -88,7 +88,7 @@ export const SessionForm: FC<SessionFormProps> = ({
             type="text"
             value={goal}
             onChange={(e) => onChangeGoal(e.target.value)}
-            placeholder="e.g. Finish the useState lesson"
+            placeholder="e.g. Read chapter 3"
             className="w-full bg-[#FAF9F6] border-2 border-[#242424] border-dashed rounded-[255px_15px_225px_15px/15px_225px_15px_255px] px-3.5 py-2 text-base font-sketch text-[#242424] placeholder-[#6B6B6B]/60 focus:outline-none focus:border-solid focus:ring-1 focus:ring-[#242424]"
           />
         </div>

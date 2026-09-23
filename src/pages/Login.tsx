@@ -1,157 +1,258 @@
-import { useState } from 'react';
-import type { FC, FormEvent } from 'react';
+import { useState, useEffect } from 'react';
+import type { FC } from 'react';
 import { FcGoogle } from 'react-icons/fc';
 import { 
   IoArrowBackOutline, 
-  IoEyeOutline, 
-  IoEyeOffOutline, 
-  IoLogInOutline,
-  IoSparklesOutline
+  IoSparklesOutline,
+  IoCheckmarkCircleOutline,
+  IoAlertCircleOutline
 } from 'react-icons/io5';
 import type { User } from '../types/auth';
+import { apiGoogleAuth, apiGuestAuth } from '../utils/api';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: { 
+            client_id: string; 
+            callback: (response: { credential: string }) => void;
+            auto_select?: boolean;
+          }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+          prompt: (notification?: unknown) => void;
+        };
+        oauth2: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (tokenResponse: { access_token?: string; error?: string; error_description?: string }) => void;
+          }) => {
+            requestAccessToken: () => void;
+          };
+        };
+      };
+    };
+  }
+}
 
 interface LoginProps {
   onLoginSuccess: (user: User) => void;
   onBack: () => void;
 }
 
-export const Login: FC<LoginProps> = ({ onLoginSuccess, onBack }) => {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-  const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
-  const [isLoadingEmail, setIsLoadingEmail] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+const DEFAULT_GOOGLE_CLIENT_ID = '924836308076-nkkkg7k7s3mo8elnd2mokublrupovj6f.apps.googleusercontent.com';
 
-  // 1. Google Sign-In Flow
+export const Login: FC<LoginProps> = ({ onLoginSuccess, onBack }) => {
+  const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
+  const [isLoadingGuest, setIsLoadingGuest] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
+
+  // Initialize official Google Identity Services
+  useEffect(() => {
+    const initGoogleGIS = () => {
+      if (!window.google?.accounts?.id || !googleClientId) return;
+
+      try {
+        // Initialize One-Tap / ID token listener
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (response) => {
+            if (!response.credential) return;
+            setIsLoadingGoogle(true);
+            setErrorMsg('');
+            try {
+              const res = await apiGoogleAuth({ credential: response.credential });
+              setSuccessMsg(`Welcome, ${res.user.name}!`);
+              setTimeout(() => onLoginSuccess(res.user), 400);
+            } catch (err: unknown) {
+              setErrorMsg(err instanceof Error ? err.message : 'Google authentication failed');
+            } finally {
+              setIsLoadingGoogle(false);
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('Google Identity Services initialization notice:', err);
+      }
+    };
+
+    if (window.google?.accounts?.id) {
+      initGoogleGIS();
+    } else {
+      const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = initGoogleGIS;
+        document.head.appendChild(script);
+      } else {
+        existingScript.addEventListener('load', initGoogleGIS);
+      }
+    }
+  }, [googleClientId, onLoginSuccess]);
+
+  // Real Google OAuth 2.0 Popup Flow
   const handleGoogleSignIn = () => {
     setErrorMsg('');
+    setSuccessMsg('');
     setIsLoadingGoogle(true);
 
-    // Simulate Google OAuth handshake
-    setTimeout(() => {
-      const googleUser: User = {
-        id: `usr-google-${Date.now()}`,
-        name: 'Alex Chen',
-        email: 'alex.chen@gmail.com',
-        avatar: '👤',
-        provider: 'google',
-        joinedDate: new Date().toISOString().split('T')[0],
-      };
-
+    if (!window.google?.accounts?.oauth2) {
+      // Fallback to One-Tap prompt
+      if (window.google?.accounts?.id) {
+        window.google.accounts.id.prompt();
+        setIsLoadingGoogle(false);
+        return;
+      }
+      setErrorMsg('Google Sign-In is initializing. Please wait a moment and try again.');
       setIsLoadingGoogle(false);
-      onLoginSuccess(googleUser);
-    }, 600);
+      return;
+    }
+
+    try {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: googleClientId,
+        scope: 'email profile openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) {
+            setErrorMsg('Google Sign-In was cancelled. Please try again.');
+            setIsLoadingGoogle(false);
+            return;
+          }
+
+          if (!tokenResponse.access_token) {
+            setErrorMsg('No access token returned from Google.');
+            setIsLoadingGoogle(false);
+            return;
+          }
+
+          try {
+            // Fetch real user profile from Google
+            const googleUserInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+            });
+
+            if (!googleUserInfoRes.ok) {
+              throw new Error('Failed to retrieve user profile from Google');
+            }
+
+            const profile = await googleUserInfoRes.json();
+
+            // Register / login via MySQL backend
+            const backendRes = await apiGoogleAuth({
+              email: profile.email,
+              name: profile.name || profile.given_name || profile.email.split('@')[0],
+              avatar: profile.picture
+            });
+
+            setSuccessMsg(`Welcome, ${backendRes.user.name}!`);
+            setTimeout(() => onLoginSuccess(backendRes.user), 400);
+          } catch (err: unknown) {
+            console.error('Error finishing Google login:', err);
+            setErrorMsg(err instanceof Error ? err.message : 'Google authentication failed');
+          } finally {
+            setIsLoadingGoogle(false);
+          }
+        }
+      });
+
+      tokenClient.requestAccessToken();
+    } catch (err: unknown) {
+      console.error('Failed to launch Google OAuth popup:', err);
+      setIsLoadingGoogle(false);
+      setErrorMsg('Could not open Google Sign-In. Please make sure popups are allowed in your browser.');
+    }
   };
 
-  // 2. Email & Password Sign-In Flow
-  const handleSubmitEmail = (e: FormEvent) => {
-    e.preventDefault();
+  // Continue as Guest
+  const handleContinueAsGuest = async () => {
     setErrorMsg('');
-
-    if (!email.trim() || !password.trim()) {
-      setErrorMsg('Please enter both email and password.');
-      return;
-    }
-
-    if (password.length < 4) {
-      setErrorMsg('Password should be at least 4 characters.');
-      return;
-    }
-
-    setIsLoadingEmail(true);
-
-    setTimeout(() => {
-      const userName = isSignUp 
-        ? (name.trim() || email.split('@')[0]) 
-        : (email.split('@')[0] || 'User');
-
-      // Capitalize first letter
-      const formattedName = userName.charAt(0).toUpperCase() + userName.slice(1);
-
-      const emailUser: User = {
-        id: `usr-email-${Date.now()}`,
-        name: formattedName,
-        email: email.trim(),
-        avatar: '👤',
-        provider: 'email',
+    setIsLoadingGuest(true);
+    try {
+      const res = await apiGuestAuth();
+      onLoginSuccess(res.user);
+    } catch {
+      // Offline fallback
+      const guestUser: User = {
+        id: `usr-guest-${Date.now()}`,
+        name: 'Guest User',
+        email: 'guest@local',
+        avatar: '✎',
+        provider: 'guest',
         joinedDate: new Date().toISOString().split('T')[0],
       };
-
-      setIsLoadingEmail(false);
-      onLoginSuccess(emailUser);
-    }, 500);
-  };
-
-  // 3. Guest Flow
-  const handleContinueAsGuest = () => {
-    const guestUser: User = {
-      id: `usr-guest-${Date.now()}`,
-      name: 'Guest User',
-      email: 'guest@local',
-      avatar: '✎',
-      provider: 'guest',
-      joinedDate: new Date().toISOString().split('T')[0],
-    };
-    onLoginSuccess(guestUser);
+      onLoginSuccess(guestUser);
+    } finally {
+      setIsLoadingGuest(false);
+    }
   };
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-6 font-hand">
+    <div className="max-w-md mx-auto px-4 py-6 font-hand">
       {/* Back button */}
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-2 mb-6 px-3.5 py-1.5 text-base font-sketch font-bold text-[#6B6B6B] hover:text-[#242424] bg-white border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[2px_2px_0px_#242424] hover:shadow-[3px_3px_0px_#242424] transition-all"
+        className="inline-flex items-center gap-2 mb-6 px-3.5 py-1.5 text-base font-sketch font-bold text-[#6B6B6B] hover:text-[#242424] bg-white border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[2px_2px_0px_#242424] hover:shadow-[3px_3px_0px_#242424] transition-all cursor-pointer"
       >
         <IoArrowBackOutline className="text-lg" />
         <span>[ ← Back to Notebook ]</span>
       </button>
 
       {/* Main Login Card */}
-      <div className="relative bg-white border-3 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] p-6 sm:p-9 shadow-[6px_6px_0px_#242424] -rotate-0.5 overflow-hidden">
-        
-        {/* Taped accents */}
+      <div className="relative bg-white border-3 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] p-8 sm:p-10 shadow-[6px_6px_0px_#242424]">
+
+        {/* Tape accents */}
         <div className="absolute -top-3.5 left-10 w-24 h-7 bg-[#FDE68A] border border-dashed border-[#6B6B6B] -rotate-2 pointer-events-none" />
         <div className="absolute -top-3.5 right-10 w-20 h-7 bg-[#BBF7D0] border border-dashed border-[#6B6B6B] rotate-2 pointer-events-none" />
 
         {/* Header */}
-        <div className="text-center pt-2 pb-4 border-b-2 border-dashed border-[#6B6B6B]/30">
-          <div className="flex justify-center mb-2">
-            <img 
-              src="/logo.png" 
-              alt="StudyTime" 
-              className="h-16 w-auto object-contain cursor-pointer hover:scale-105 transition-transform" 
+        <div className="text-center pt-2 pb-6 border-b-2 border-dashed border-[#6B6B6B]/30">
+          <div className="flex justify-center mb-3">
+            <img
+              src="/logo.png"
+              alt="StudyTime"
+              className="h-16 w-auto object-contain hover:scale-105 transition-transform"
             />
           </div>
-
-          <h2 className="text-2xl sm:text-3xl font-extrabold font-handwriting text-[#242424] tracking-wide">
-            {isSignUp ? 'CREATE AN ACCOUNT' : 'SIGN IN'}
+          <h2 className="text-2xl sm:text-3xl font-extrabold font-handwriting text-[#242424] tracking-wide uppercase">
+            Sign In
           </h2>
           <p className="text-sm sm:text-base font-sketch text-[#6B6B6B] mt-1">
-            {isSignUp 
-              ? 'Start tracking your time and save all your sessions.' 
-              : 'Sign in to access your streaks, subjects, and journal.'}
+            Sign in with your Google account to save your progress, streaks, and study history.
           </p>
         </div>
 
         {/* Error message */}
         {errorMsg && (
-          <div className="mt-4 p-2.5 bg-[#FCA5A5]/40 border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] text-xs sm:text-sm font-sketch font-bold text-[#242424]">
-            ⚠ {errorMsg}
+          <div className="mt-5 p-3 bg-[#FCA5A5]/40 border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] text-xs sm:text-sm font-sketch font-bold text-[#242424] flex items-start gap-2">
+            <IoAlertCircleOutline className="text-xl text-red-700 shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
           </div>
         )}
 
-        {/* 1. Google Sign-In Button */}
-        <div className="mt-6">
+        {/* Success message */}
+        {successMsg && (
+          <div className="mt-5 p-2.5 bg-[#BBF7D0]/60 border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] text-xs sm:text-sm font-sketch font-bold text-[#242424] flex items-center gap-1.5">
+            <IoCheckmarkCircleOutline className="text-lg text-emerald-700" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* Google Sign-In Button */}
+        <div className="mt-7">
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            disabled={isLoadingGoogle}
-            className="w-full py-3 px-4 bg-white hover:bg-slate-50 text-[#242424] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[3px_3px_0px_#242424] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#242424] transition-all flex items-center justify-center gap-3 font-sketch font-bold text-base sm:text-lg group"
+            disabled={isLoadingGoogle || isLoadingGuest}
+            className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-[#242424] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[4px_4px_0px_#242424] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#242424] transition-all flex items-center justify-center gap-3 font-sketch font-bold text-base sm:text-lg group cursor-pointer disabled:opacity-60"
           >
             {isLoadingGoogle ? (
               <span className="inline-flex items-center gap-2">
@@ -166,158 +267,43 @@ export const Login: FC<LoginProps> = ({ onLoginSuccess, onBack }) => {
           </button>
         </div>
 
-        {/* Sketched Divider */}
+        {/* Privacy note */}
+        <p className="text-center text-xs font-sketch text-[#6B6B6B] mt-4 px-2">
+          🔒 We only use your name and profile picture. No personal data is shared.
+        </p>
+
+        {/* Divider */}
         <div className="relative my-6 text-center">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-dashed border-[#6B6B6B]/40" />
           </div>
           <span className="relative bg-white px-3 text-xs sm:text-sm font-sketch font-bold text-[#6B6B6B] uppercase tracking-wider">
-            or sign in with email
+            or
           </span>
         </div>
 
-        {/* 2. Email & Password Form */}
-        <form onSubmit={handleSubmitEmail} className="space-y-4">
-          {/* Name input (only for Sign Up) */}
-          {isSignUp && (
-            <div>
-              <label className="block text-sm font-sketch font-bold text-[#242424] mb-1">
-                Your Name:
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Alex Chen"
-                className="w-full bg-[#FAF9F6] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] p-2.5 text-base font-sketch text-[#242424] placeholder-[#6B6B6B]/60 focus:outline-none focus:ring-1 focus:ring-[#242424]"
-                required={isSignUp}
-              />
-            </div>
-          )}
-
-          {/* Email input */}
-          <div>
-            <label className="block text-sm font-sketch font-bold text-[#242424] mb-1">
-              Email:
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. alex@example.com"
-              className="w-full bg-[#FAF9F6] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] p-2.5 text-base font-sketch text-[#242424] placeholder-[#6B6B6B]/60 focus:outline-none focus:ring-1 focus:ring-[#242424]"
-              required
-            />
-          </div>
-
-          {/* Password input */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-sm font-sketch font-bold text-[#242424]">
-                Password:
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-xs font-sketch text-[#6B6B6B] hover:text-[#242424] flex items-center gap-1"
-              >
-                {showPassword ? <IoEyeOffOutline /> : <IoEyeOutline />}
-                <span>{showPassword ? 'Hide' : 'Show'}</span>
-              </button>
-            </div>
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full bg-[#FAF9F6] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] p-2.5 text-base font-sketch text-[#242424] placeholder-[#6B6B6B]/60 focus:outline-none focus:ring-1 focus:ring-[#242424]"
-              required
-            />
-          </div>
-
-          {/* Remember Me */}
-          <div className="flex items-center justify-between text-xs sm:text-sm font-sketch pt-1">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-2 border-[#242424] text-[#242424] focus:ring-0 cursor-pointer"
-              />
-              <span className="text-[#6B6B6B]">Remember this device</span>
-            </label>
-
-            {!isSignUp && (
-              <span className="text-[#6B6B6B] hover:text-[#242424] cursor-pointer hover:underline">
-                Forgot password?
-              </span>
-            )}
-          </div>
-
-          {/* Submit Button */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={isLoadingEmail}
-              className="w-full py-2.5 text-lg font-handwriting font-bold bg-[#FDE68A] hover:bg-[#fcd34d] text-[#242424] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[3px_3px_0px_#242424] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#242424] transition-all -rotate-0.5 hover:rotate-0 flex items-center justify-center gap-2"
-            >
-              {isLoadingEmail ? (
-                <span>Signing in... ✎</span>
-              ) : (
-                <>
-                  <IoLogInOutline className="text-xl" />
-                  <span>[ {isSignUp ? 'Create Account' : 'Sign In'} ✎ ]</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-
-        {/* Toggle Sign In / Sign Up */}
-        <div className="mt-6 pt-4 border-t border-dashed border-[#6B6B6B]/30 text-center text-sm font-sketch">
-          {isSignUp ? (
-            <p className="text-[#6B6B6B]">
-              Already have an account?{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSignUp(false);
-                  setErrorMsg('');
-                }}
-                className="font-bold text-[#242424] underline hover:text-amber-700"
-              >
-                Sign In
-              </button>
-            </p>
+        {/* Continue as Guest */}
+        <button
+          type="button"
+          onClick={handleContinueAsGuest}
+          disabled={isLoadingGoogle || isLoadingGuest}
+          className="w-full py-2.5 text-sm font-sketch font-bold text-[#6B6B6B] hover:text-[#242424] bg-[#FAF9F6] hover:bg-[#f0ede6] border-2 border-dashed border-[#6B6B6B]/60 hover:border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+        >
+          {isLoadingGuest ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="animate-spin text-base">⏳</span> Loading guest mode...
+            </span>
           ) : (
-            <p className="text-[#6B6B6B]">
-              Don't have an account?{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSignUp(true);
-                  setErrorMsg('');
-                }}
-                className="font-bold text-[#242424] underline hover:text-amber-700"
-              >
-                Create a Free Account
-              </button>
-            </p>
+            <>
+              <IoSparklesOutline className="text-base" />
+              <span>Continue as Guest (offline mode)</span>
+            </>
           )}
-        </div>
+        </button>
 
-        {/* 3. Continue as Guest Button */}
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            onClick={handleContinueAsGuest}
-            className="text-xs sm:text-sm font-sketch text-[#6B6B6B] hover:text-[#242424] inline-flex items-center gap-1 py-1 px-3 rounded hover:bg-[#FAF9F6] transition"
-          >
-            <IoSparklesOutline />
-            <span>Continue as Guest (offline mode) →</span>
-          </button>
-        </div>
-
+        <p className="text-center text-xs font-sketch text-[#6B6B6B]/70 mt-3">
+          Guest sessions are not saved to the cloud.
+        </p>
       </div>
     </div>
   );

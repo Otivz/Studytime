@@ -12,153 +12,23 @@ const STORAGE_KEYS = {
   USER: 'study_notebook_current_user',
 };
 
-const DEFAULT_SUBJECTS: Subject[] = [
-  { 
-    id: 'sub-1', 
-    name: 'React Development', 
-    color: '#BFDBFE', 
-    icon: '📚', 
-    sessionsCount: 6, 
-    totalMinutes: 150, 
-    goal: 'Build interactive StudyTime app and state hooks',
-    targetDate: '2026-09-28',
-    targetMinutes: 300, // 5 hours
-    status: 'active',
-  },
-  { 
-    id: 'sub-2', 
-    name: 'Database Systems', 
-    color: '#BBF7D0', 
-    icon: '📚', 
-    sessionsCount: 4, 
-    totalMinutes: 100, 
-    goal: 'Finish Chapters 1–5',
-    targetDate: '2026-09-30',
-    targetMinutes: 600, // 10 hours
-    status: 'active',
-  },
-  { 
-    id: 'sub-3', 
-    name: 'Capstone Project', 
-    color: '#FDE68A', 
-    icon: '📚', 
-    sessionsCount: 3, 
-    totalMinutes: 75, 
-    goal: 'Complete architecture diagram and schema',
-    targetDate: '2026-10-05',
-    targetMinutes: 480, // 8 hours
-    status: 'active',
-  },
-  { 
-    id: 'sub-4', 
-    name: 'Python', 
-    color: '#FBCFE8', 
-    icon: '📚', 
-    sessionsCount: 5, 
-    totalMinutes: 125, 
-    goal: 'Master algorithm patterns and LeetCode sets',
-    targetDate: '2026-10-10',
-    targetMinutes: 360, // 6 hours
-    status: 'active',
-  },
-  { 
-    id: 'sub-5', 
-    name: 'Flutter', 
-    color: '#BFDBFE', 
-    icon: '📚', 
-    sessionsCount: 2, 
-    totalMinutes: 50, 
-    goal: 'Read widget lifecycle guide',
-    status: 'completed',
-    completedAt: '2026-09-20',
-  },
-];
+// No mock data — fresh users start with nothing until they add subjects
+export const DEFAULT_SUBJECTS: Subject[] = [];
 
-
-const DEFAULT_SETTINGS: TimerSettings = {
+export const DEFAULT_SETTINGS: TimerSettings = {
   studyMinutes: 25,
   shortBreakMinutes: 5,
   longBreakMinutes: 15,
-  dailyGoalMinutes: 120, // 120 minutes default from prompt
+  dailyGoalMinutes: 120,
   soundEnabled: true,
 };
 
-const DEFAULT_GOAL: DailyGoal = {
+export const DEFAULT_GOAL: DailyGoal = {
   targetMinutes: 120,
-  streakDays: 5, // "🔥 5 Day Streak"
-  lastActiveDate: new Date().toISOString().split('T')[0],
-  longestStreak: 8,
+  streakDays: 0,
+  lastActiveDate: '',
+  longestStreak: 0,
 };
-
-function generateInitialSessions(): SessionRecord[] {
-  const now = new Date();
-  const sessions: SessionRecord[] = [];
-
-  // Today's sessions matching the prompt's examples
-  const today1 = new Date(now.getTime() - 25 * 60000);
-  const today2 = new Date(now.getTime() - 65 * 60000);
-  const today3 = new Date(now.getTime() - 110 * 60000);
-  const today4 = new Date(now.getTime() - 160 * 60000);
-
-  sessions.push({
-    id: 'sess-today-1',
-    subjectId: 'sub-1',
-    subjectName: 'React Development',
-    durationMinutes: 25,
-    timestamp: today1.toISOString(),
-    goal: 'Finish the useState lesson',
-    notes: 'Practiced component state and conditional rendering',
-    completed: true,
-  });
-
-  sessions.push({
-    id: 'sess-today-2',
-    subjectId: 'sub-2',
-    subjectName: 'Database Systems',
-    durationMinutes: 25,
-    timestamp: today2.toISOString(),
-    goal: 'Review normalization',
-    notes: 'Covered 1NF, 2NF, 3NF with practice queries',
-    completed: true,
-  });
-
-  sessions.push({
-    id: 'sess-today-3',
-    subjectId: 'sub-3',
-    subjectName: 'Capstone Project',
-    durationMinutes: 20,
-    timestamp: today3.toISOString(),
-    goal: 'Draft architecture diagram',
-    notes: 'Completed system schema blueprint',
-    completed: true,
-  });
-
-  sessions.push({
-    id: 'sess-today-4',
-    subjectId: 'sub-4',
-    subjectName: 'Python',
-    durationMinutes: 15,
-    timestamp: today4.toISOString(),
-    goal: 'List comprehension practice',
-    notes: 'Solved 8 LeetCode problems',
-    completed: true,
-  });
-
-  // Yesterday's session
-  const yesterday = new Date(now.getTime() - 24 * 3600000);
-  sessions.push({
-    id: 'sess-yesterday-1',
-    subjectId: 'sub-1',
-    subjectName: 'React Development',
-    durationMinutes: 25,
-    timestamp: yesterday.toISOString(),
-    goal: 'Read useEffect documentation',
-    notes: 'Understood dependency array rules',
-    completed: true,
-  });
-
-  return sessions;
-}
 
 export function loadSubjects(): Subject[] {
   try {
@@ -177,10 +47,8 @@ export function loadSubjects(): Subject[] {
   } catch (e) {
     console.error('Failed to load subjects', e);
   }
-  saveSubjects(DEFAULT_SUBJECTS);
   return DEFAULT_SUBJECTS;
 }
-
 
 export function saveSubjects(subjects: Subject[]): void {
   try {
@@ -197,9 +65,7 @@ export function loadSessions(): SessionRecord[] {
   } catch (e) {
     console.error('Failed to load sessions', e);
   }
-  const initial = generateInitialSessions();
-  saveSessions(initial);
-  return initial;
+  return [];
 }
 
 export function saveSessions(sessions: SessionRecord[]): void {
@@ -217,7 +83,6 @@ export function loadSettings(): TimerSettings {
   } catch (e) {
     console.error('Failed to load settings', e);
   }
-  saveSettings(DEFAULT_SETTINGS);
   return DEFAULT_SETTINGS;
 }
 
@@ -236,7 +101,6 @@ export function loadDailyGoal(): DailyGoal {
   } catch (e) {
     console.error('Failed to load daily goal', e);
   }
-  saveDailyGoal(DEFAULT_GOAL);
   return DEFAULT_GOAL;
 }
 
@@ -255,7 +119,7 @@ export function loadActiveSubjectId(): string {
   } catch {
     // ignore
   }
-  return DEFAULT_SUBJECTS[0].id;
+  return '';
 }
 
 export function saveActiveSubjectId(id: string): void {
@@ -285,5 +149,17 @@ export function saveCurrentUser(user: User | null): void {
     }
   } catch (e) {
     console.error('Failed to save user', e);
+  }
+}
+
+export function clearAllStoredUserData(): void {
+  try {
+    Object.values(STORAGE_KEYS).forEach((key) => {
+      localStorage.removeItem(key);
+    });
+    localStorage.removeItem('study_notebook_token');
+    localStorage.removeItem('study_remembered_email');
+  } catch (e) {
+    console.error('Failed to clear stored data', e);
   }
 }

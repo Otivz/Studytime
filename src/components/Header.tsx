@@ -1,6 +1,5 @@
 import type { FC } from 'react';
 import { IoFlame, IoPersonOutline, IoLogOutOutline } from 'react-icons/io5';
-import { FcGoogle } from 'react-icons/fc';
 import type { User } from '../types/auth';
 
 interface HeaderProps {
@@ -46,35 +45,41 @@ export const Header: FC<HeaderProps> = ({
 
         {/* Top Right Badges: Streak & User Profile */}
         <div className="flex items-center gap-2.5 flex-wrap justify-center sm:justify-end">
-          {/* Notebook Streak Sticker */}
-          <div className="flex items-center gap-2 px-3.5 py-1.5 bg-[#FDE68A] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[2px_2px_0px_#242424] -rotate-1 hover:rotate-0 transition-transform cursor-default select-none">
-            <IoFlame className="text-xl text-[#242424]" />
-            <span className="font-handwriting font-bold text-base text-[#242424]">
-              {streakDays} Day Streak!
-            </span>
-          </div>
+          {/* Notebook Streak Sticker - Only show when logged in */}
+          {user && (
+            <div className="flex items-center gap-2 px-3.5 py-1.5 bg-[#FDE68A] border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[2px_2px_0px_#242424] -rotate-1 hover:rotate-0 transition-transform cursor-default select-none">
+              <IoFlame className="text-xl text-[#242424]" />
+              <span className="font-handwriting font-bold text-base text-[#242424]">
+                {streakDays} Day Streak!
+              </span>
+            </div>
+          )}
 
           {/* User Profile / Sign In Widget */}
           {user ? (
-            <div className="flex items-center gap-2 px-3 py-1 bg-white border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[2px_2px_0px_#242424] rotate-1 hover:rotate-0 transition-transform">
-              <span className="text-base select-none">{user.avatar || '👤'}</span>
-              <div className="flex items-center gap-1.5">
-                <span className="font-handwriting font-bold text-sm text-[#242424] max-w-[110px] truncate">
-                  {user.name}
-                </span>
-                {user.provider === 'google' && (
-                  <span title="Signed in with Google" className="flex items-center">
-                    <FcGoogle className="text-base" />
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-white border-2 border-[#242424] rounded-[255px_15px_225px_15px/15px_225px_15px_255px] shadow-[2px_2px_0px_#242424] rotate-1 hover:rotate-0 transition-transform">
+              {user.avatar && user.avatar.startsWith('http') ? (
+                <img 
+                  src={user.avatar} 
+                  alt={user.name} 
+                  referrerPolicy="no-referrer"
+                  className="w-7 h-7 rounded-full object-cover border-2 border-[#242424] shrink-0" 
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-[#FDE68A] border-2 border-[#242424] flex items-center justify-center font-bold text-xs shrink-0 select-none">
+                  {user.avatar || user.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span className="font-handwriting font-bold text-base text-[#242424] max-w-[140px] sm:max-w-[180px] truncate">
+                {user.name}
+              </span>
               <button
                 type="button"
                 onClick={onLogout}
                 title="Sign out"
-                className="ml-1 p-1 text-[#6B6B6B] hover:text-rose-600 rounded transition"
+                className="p-1 text-[#6B6B6B] hover:text-rose-600 rounded transition cursor-pointer"
               >
-                <IoLogOutOutline className="text-base" />
+                <IoLogOutOutline className="text-lg" />
               </button>
             </div>
           ) : (

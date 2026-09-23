@@ -90,6 +90,7 @@ export async function initDatabase() {
         status VARCHAR(32) DEFAULT 'active',
         completed_at VARCHAR(64),
         goal_celebrated TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
@@ -105,9 +106,22 @@ export async function initDatabase() {
         goal VARCHAR(255),
         notes TEXT,
         completed TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Ensure created_at exists for existing databases
+    try {
+      await conn.query('ALTER TABLE subjects ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+    } catch {
+      // column already exists
+    }
+    try {
+      await conn.query('ALTER TABLE sessions ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+    } catch {
+      // column already exists
+    }
 
     conn.release();
     console.log('StudyTime MySQL schema verified and ready.');

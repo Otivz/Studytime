@@ -25,14 +25,22 @@ function mapSubjectFromDb(row) {
 // 1. Get all subjects for a user (Protected)
 router.get('/:userId', authenticateToken, authorizeUser('userId'), async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT * FROM subjects WHERE user_id = ? ORDER BY created_at ASC',
-      [req.user.id]
-    );
+    let rows;
+    try {
+      [rows] = await pool.query(
+        'SELECT * FROM subjects WHERE user_id = ? ORDER BY created_at ASC',
+        [req.user.id]
+      );
+    } catch {
+      [rows] = await pool.query(
+        'SELECT * FROM subjects WHERE user_id = ? ORDER BY id ASC',
+        [req.user.id]
+      );
+    }
     res.json(rows.map(mapSubjectFromDb));
   } catch (error) {
     console.error('Error fetching subjects:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

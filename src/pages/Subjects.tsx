@@ -291,7 +291,7 @@ export const Subjects: FC<SubjectsPageProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Finish Chapters 1–5, Master useState..."
+                  placeholder="e.g. Finish Chapters 1–5, Master algebra..."
                   value={goal}
                   onChange={(e) => setGoal(e.target.value)}
                   className="w-full bg-white border-2 border-[#242424] border-dashed rounded-[255px_15px_225px_15px/15px_225px_15px_255px] px-3.5 py-2 text-base font-sketch text-[#242424] placeholder-[#6B6B6B]/60 focus:outline-none focus:border-solid focus:ring-1 focus:ring-[#242424]"
@@ -322,7 +322,7 @@ export const Subjects: FC<SubjectsPageProps> = ({
                     <input
                       type="number"
                       min="1"
-                      step={targetTimeUnit === 'hours' ? '0.5' : '15'}
+                      step={targetTimeUnit === 'hours' ? '0.5' : '1'}
                       placeholder="e.g. 10"
                       value={targetTimeValue}
                       onChange={(e) => setTargetTimeValue(e.target.value)}

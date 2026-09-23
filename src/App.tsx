@@ -14,6 +14,7 @@ import { RandomSubjectModal } from './components/RandomSubjectModal';
 import { GoalCelebrationModal } from './components/GoalCelebrationModal';
 import { BreakCompleteModal } from './components/BreakCompleteModal';
 import { LogoutModal } from './components/LogoutModal';
+import { SkipConfirmModal } from './components/SkipConfirmModal';
 
 import type { Subject } from './types/subject';
 import type { SessionRecord, TimerMode } from './types/session';
@@ -91,6 +92,7 @@ export function App() {
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isBreakCompleteModalOpen, setIsBreakCompleteModalOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
 
   // Timer states
   const [mode, setMode] = useState<TimerMode>('study');
@@ -386,9 +388,12 @@ export function App() {
   };
 
   const handleSkipTimer = () => {
-    if (confirm('Skip to session completion?')) {
-      handleTimerComplete();
-    }
+    setIsSkipModalOpen(true);
+  };
+
+  const handleConfirmSkip = () => {
+    setIsSkipModalOpen(false);
+    handleTimerComplete();
   };
 
   const handleSelectMode = (newMode: TimerMode) => {
@@ -739,6 +744,14 @@ export function App() {
         userName={user?.name || 'Guest'}
         onConfirm={handleConfirmLogout}
         onCancel={() => setIsLogoutModalOpen(false)}
+      />
+
+      {/* Skip Session Confirmation Modal */}
+      <SkipConfirmModal
+        isOpen={isSkipModalOpen}
+        mode={mode}
+        onConfirm={handleConfirmSkip}
+        onCancel={() => setIsSkipModalOpen(false)}
       />
 
     </div>

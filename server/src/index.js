@@ -12,6 +12,7 @@ import settingsRoutes from './routes/settings.js';
 import goalsRoutes from './routes/goals.js';
 
 import { PORT } from './config.js';
+import { initDatabase } from './db.js';
 
 const app = express();
 
@@ -47,6 +48,7 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`StudyTime backend listening on http://localhost:${PORT}`);
+  await initDatabase();
 });

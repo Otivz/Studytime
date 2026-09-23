@@ -3,7 +3,19 @@ import type { SessionRecord } from '../types/session';
 import type { TimerSettings, DailyGoal } from '../types/settings';
 import type { User } from '../types/auth';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+function getApiBase(): string {
+  let url = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').trim();
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`;
+  }
+  url = url.replace(/\/+$/, '');
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url;
+}
+
+const API_BASE = getApiBase();
 
 const TOKEN_KEY = 'study_notebook_token';
 

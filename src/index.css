@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-heading: 'Kalam', cursive, sans-serif;
+    --font-hand: 'Patrick Hand', cursive, sans-serif;
+    --font-timer: 'Space Mono', monospace;
+    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+
+    --color-paper: #FAF9F6;
+    --color-ink: #242424;
+    --color-pencil: #6B6B6B;
+    --color-yellow: #FDE68A;
+    --color-green: #BBF7D0;
+    --color-blue: #BFDBFE;
+    --color-pink: #FBCFE8;
+    --color-error: #FCA5A5;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-hand);
+    letter-spacing: 0.02em;
+    font-size: 1.05rem;
+    line-height: 1.5;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    color: var(--color-ink);
+  }
+}
+
+/* Handwritten Typography Classes */
+.font-handwriting {
+  font-family: 'Kalam', cursive;
+}
+
+.font-sketch {
+  font-family: 'Patrick Hand', cursive;
+}
+
+.font-timer {
+  font-family: 'Space Mono', monospace;
+}
+
+/* Paper Grid and Ruled Line Backgrounds */
+.notebook-ruled {
+  background-color: #FAF9F6;
+  background-image: linear-gradient(rgba(107, 107, 107, 0.08) 1px, transparent 1px);
+  background-size: 100% 1.8rem;
+}
+
+.notebook-grid {
+  background-color: #FAF9F6;
+  background-image: 
+    linear-gradient(rgba(107, 107, 107, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(107, 107, 107, 0.07) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Imperfect Hand-Drawn Borders */
+.sketch-border {
+  border: 2px solid #242424;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+}
+
+.sketch-border-thick {
+  border: 3px solid #242424;
+  border-radius: 255px 18px 225px 16px/16px 225px 18px 255px;
+}
+
+.sketch-border-sm {
+  border: 2px solid #242424;
+  border-radius: 125px 10px 115px 10px/10px 115px 10px 125px;
+}
+
+.sketch-shadow {
+  box-shadow: 3px 3px 0px #242424;
+}
+
+.sketch-shadow-lg {
+  box-shadow: 5px 5px 0px #242424;
+}
+
+.sketch-shadow-sm {
+  box-shadow: 2px 2px 0px #242424;
+}
+
+/* Interactive Sketch Button */
+.sketch-btn {
+  border: 2px solid #242424;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  box-shadow: 3px 3px 0px #242424;
+  transition: all 0.1s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sketch-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px #242424;
+}
+
+.sketch-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #242424;
+}
+
+/* Marker Highlighters */
+.highlight-yellow,
+.highlight-green,
+.highlight-blue,
+.highlight-pink {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1.15;
+  margin-bottom: 0.25rem;
+}
+
+.highlight-yellow {
+  background-color: #FDE68A;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.15em 0.45em;
+  border-radius: 4px 10px 6px 12px;
+}
+
+.highlight-green {
+  background-color: #BBF7D0;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.15em 0.45em;
+  border-radius: 6px 12px 4px 10px;
+}
+
+.highlight-blue {
+  background-color: #BFDBFE;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.15em 0.45em;
+  border-radius: 8px 4px 10px 6px;
+}
+
+.highlight-pink {
+  background-color: #FBCFE8;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.15em 0.45em;
+  border-radius: 10px 6px 12px 4px;
+}
+
+/* Sticky Note Style */
+.sticky-note {
+  border: 2px solid #242424;
+  box-shadow: 4px 4px 0px #242424;
+  position: relative;
+}
+
+.sticky-note::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50px;
+  height: 18px;
+  background-color: rgba(254, 240, 138, 0.7);
+  border: 1px dashed rgba(107, 107, 107, 0.5);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Notebook Margin Line */
+.notebook-margin {
+  border-left: 2px solid rgba(252, 165, 165, 0.6);
+}
+
+/* Wobbly/Sketch Card */
+.sketch-card {
+  background-color: #FFFFFF;
+  border: 2px solid #242424;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  box-shadow: 4px 4px 0px #242424;
+}
+
+/* Custom Scrollbar in Notebook Ink */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF9F6;
+  border-left: 1px dashed #6B6B6B;
+}
+::-webkit-scrollbar-thumb {
+  background: #6B6B6B;
+  border: 1px solid #242424;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #242424;
+}

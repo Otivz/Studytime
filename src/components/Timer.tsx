@@ -36,9 +36,12 @@ export const Timer: FC<TimerProps> = ({
   onReset,
   onSkip,
 }) => {
-  const minutes = Math.floor(timeLeft / 60);
+  const hours = Math.floor(timeLeft / 3600);
+  const minutes = Math.floor((timeLeft % 3600) / 60);
   const seconds = timeLeft % 60;
-  const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const formattedTime = hours > 0
+    ? `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+    : `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
   // Update document title
   useEffect(() => {
@@ -148,7 +151,9 @@ export const Timer: FC<TimerProps> = ({
             <div className="absolute -top-2.5 w-12 h-4 bg-[#FDE68A]/80 border border-dashed border-[#6B6B6B] -rotate-2" />
 
             {/* Digits Display */}
-            <div className="text-4xl sm:text-5xl md:text-6xl font-timer font-bold tracking-wider text-[#242424] mt-1">
+            <div className={`font-timer font-bold tracking-wider text-[#242424] mt-1 ${
+              hours > 0 ? 'text-3xl sm:text-4xl md:text-5xl' : 'text-4xl sm:text-5xl md:text-6xl'
+            }`}>
               {formattedTime}
             </div>
 

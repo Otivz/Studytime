@@ -102,9 +102,9 @@ export function App() {
   const getDurationSeconds = (m: TimerMode, currentSettings: TimerSettings, currentSubject?: Subject) => {
     switch (m) {
       case 'study':
-        if (currentSubject?.targetMinutes && currentSubject.targetMinutes > 0 && currentSubject.targetMinutes <= 180) {
+        if (currentSubject?.targetMinutes && currentSubject.targetMinutes > 0) {
           const remaining = currentSubject.targetMinutes - currentSubject.totalMinutes;
-          const mins = (remaining > 0 && remaining <= currentSubject.targetMinutes)
+          const mins = (remaining > 0)
             ? remaining
             : currentSubject.targetMinutes;
           return mins * 60;

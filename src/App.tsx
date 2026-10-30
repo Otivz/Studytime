@@ -36,7 +36,12 @@ import {
   saveCurrentUser,
   clearAllStoredUserData,
   DEFAULT_SETTINGS,
-  DEFAULT_GOAL
+  DEFAULT_GOAL,
+  loadStoredTimer,
+  saveStoredTimer,
+  clearStoredTimer,
+  type TimerModeProgress,
+  type StoredTimerState
 } from './utils/storage';
 import { 
   apiGetSubjects, 
@@ -59,6 +64,88 @@ import {
   playGoalCelebrationSound,
   stopBreakAlarmLoop 
 } from './utils/audio';
+
+export const getDurationSeconds = (m: TimerMode, currentSettings: TimerSettings, currentSubject?: Subject) => {
+  switch (m) {
+    case 'study':
+      if (currentSubject?.targetMinutes && currentSubject.targetMinutes > 0) {
+        const remaining = currentSubject.targetMinutes - currentSubject.totalMinutes;
+        const mins = (remaining > 0)
+          ? remaining
+          : currentSubject.targetMinutes;
+        return mins * 60;
+      }
+      return currentSettings.studyMinutes * 60;
+    case 'shortBreak':
+      return currentSettings.shortBreakMinutes * 60;
+    case 'longBreak':
+      return currentSettings.longBreakMinutes * 60;
+  }
+};
+
+function computeModeInitialState(
+  targetMode: TimerMode,
+  currentSettings: TimerSettings,
+  currentSubject?: Subject,
+  savedData?: TimerModeProgress
+): TimerModeProgress {
+  const defaultDur = getDurationSeconds(targetMode, currentSettings, currentSubject);
+
+  if (!savedData) {
+    return {
+      timeLeft: defaultDur,
+      totalTime: defaultDur,
+      isRunning: false,
+      isPaused: false,
+      targetEndTime: null,
+      subjectId: targetMode === 'study' ? currentSubject?.id : undefined,
+    };
+  }
+
+  if (savedData.isRunning && savedData.targetEndTime) {
+    const now = Date.now();
+    const remaining = Math.max(0, Math.ceil((savedData.targetEndTime - now) / 1000));
+    if (remaining > 0) {
+      return {
+        timeLeft: remaining,
+        totalTime: savedData.totalTime || defaultDur,
+        isRunning: true,
+        isPaused: false,
+        targetEndTime: savedData.targetEndTime,
+        subjectId: savedData.subjectId,
+      };
+    } else {
+      return {
+        timeLeft: 0,
+        totalTime: savedData.totalTime || defaultDur,
+        isRunning: false,
+        isPaused: false,
+        targetEndTime: null,
+        subjectId: savedData.subjectId,
+      };
+    }
+  }
+
+  if (savedData.isPaused) {
+    return {
+      timeLeft: typeof savedData.timeLeft === 'number' ? savedData.timeLeft : defaultDur,
+      totalTime: savedData.totalTime || defaultDur,
+      isRunning: false,
+      isPaused: true,
+      targetEndTime: null,
+      subjectId: savedData.subjectId,
+    };
+  }
+
+  return {
+    timeLeft: typeof savedData.timeLeft === 'number' ? savedData.timeLeft : defaultDur,
+    totalTime: savedData.totalTime || defaultDur,
+    isRunning: false,
+    isPaused: false,
+    targetEndTime: null,
+    subjectId: savedData.subjectId,
+  };
+}
 
 export function App() {
   // Navigation tab
@@ -83,7 +170,6 @@ export function App() {
     const initialUser = loadCurrentUser();
     return initialUser ? loadDailyGoal() : DEFAULT_GOAL;
   });
-  const [goal, setGoal] = useState<string>('');
 
   // Modals
   const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
@@ -94,48 +180,66 @@ export function App() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
 
-  // Timer states
-  const [mode, setMode] = useState<TimerMode>('study');
-  const [isRunning, setIsRunning] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-
-  const getDurationSeconds = (m: TimerMode, currentSettings: TimerSettings, currentSubject?: Subject) => {
-    switch (m) {
-      case 'study':
-        if (currentSubject?.targetMinutes && currentSubject.targetMinutes > 0) {
-          const remaining = currentSubject.targetMinutes - currentSubject.totalMinutes;
-          const mins = (remaining > 0)
-            ? remaining
-            : currentSubject.targetMinutes;
-          return mins * 60;
-        }
-        return currentSettings.studyMinutes * 60;
-      case 'shortBreak':
-        return currentSettings.shortBreakMinutes * 60;
-      case 'longBreak':
-        return currentSettings.longBreakMinutes * 60;
-    }
-  };
-
   const activeSubject = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
 
-  const [totalTime, setTotalTime] = useState<number>(() => {
-    const initialSub = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
-    return getDurationSeconds('study', settings, initialSub);
-  });
-  const [timeLeft, setTimeLeft] = useState<number>(() => {
-    const initialSub = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
-    return getDurationSeconds('study', settings, initialSub);
+  // Saved timer cache for persistent session across refresh and mode switches
+  const [initialStored] = useState<StoredTimerState | null>(() => loadStoredTimer());
+
+  const [modeStates, setModeStates] = useState<{
+    study: TimerModeProgress;
+    shortBreak: TimerModeProgress;
+    longBreak: TimerModeProgress;
+  }>(() => {
+    const initialUser = loadCurrentUser();
+    const loadedSubs = initialUser ? loadSubjects() : [];
+    const activeSubId = loadActiveSubjectId();
+    const initialSub = loadedSubs.find((s) => s.id === activeSubId) || loadedSubs[0];
+    const loadedSettings = initialUser ? loadSettings() : DEFAULT_SETTINGS;
+
+    return {
+      study: computeModeInitialState('study', loadedSettings, initialSub, initialStored?.modes?.study),
+      shortBreak: computeModeInitialState('shortBreak', loadedSettings, initialSub, initialStored?.modes?.shortBreak),
+      longBreak: computeModeInitialState('longBreak', loadedSettings, initialSub, initialStored?.modes?.longBreak),
+    };
   });
 
-  // Keep timer synced with active subject if timer is idle
+  const initialMode: TimerMode = initialStored?.currentMode || 'study';
+  const initialActive = modeStates[initialMode];
+
+  const [mode, setMode] = useState<TimerMode>(initialMode);
+  const [isRunning, setIsRunning] = useState<boolean>(initialActive.isRunning);
+  const [isPaused, setIsPaused] = useState<boolean>(initialActive.isPaused);
+  const [totalTime, setTotalTime] = useState<number>(initialActive.totalTime);
+  const [timeLeft, setTimeLeft] = useState<number>(initialActive.timeLeft);
+  const [goal, setGoal] = useState<string>(() => initialStored?.goal || '');
+
+  const targetEndTimeRef = useRef<number | null>(initialActive.isRunning ? initialActive.targetEndTime : null);
+
+  // Auto-complete timer on load if expired while page was closed
   useEffect(() => {
-    if (!isRunning && !isPaused && mode === 'study') {
+    if (initialStored?.modes?.[initialMode]?.isRunning && initialActive.timeLeft <= 0) {
+      handleTimerComplete();
+    }
+  }, []);
+
+  // Keep timer synced with active subject ONLY if study timer is completely idle (never started or reset)
+  const isStudyTimerIdle = !isRunning && !isPaused && mode === 'study' && timeLeft === totalTime;
+  useEffect(() => {
+    if (isStudyTimerIdle) {
       const dur = getDurationSeconds('study', settings, activeSubject);
       setTotalTime(dur);
       setTimeLeft(dur);
+      setModeStates((prev) => ({
+        ...prev,
+        study: {
+          ...prev.study,
+          timeLeft: dur,
+          totalTime: dur,
+          subjectId: activeSubject?.id,
+        }
+      }));
     }
-  }, [selectedSubjectId, activeSubject?.id, activeSubject?.targetMinutes, activeSubject?.totalMinutes, settings.studyMinutes]);
+  }, [selectedSubjectId, activeSubject?.id, activeSubject?.targetMinutes, activeSubject?.totalMinutes, settings.studyMinutes, isStudyTimerIdle]);
 
   // ================= MYSQL BACKEND SYNC =================
   const fetchBackendUserData = useCallback(async (userId: string) => {
@@ -213,15 +317,22 @@ export function App() {
 
   useEffect(() => {
     if (isRunning) {
+      if (!targetEndTimeRef.current) {
+        targetEndTimeRef.current = Date.now() + timeLeft * 1000;
+      }
+
       timerRef.current = window.setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            handleTimerComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+        if (!targetEndTimeRef.current) return;
+        const now = Date.now();
+        const diff = Math.max(0, Math.ceil((targetEndTimeRef.current - now) / 1000));
+        setTimeLeft(diff);
+
+        if (diff <= 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          targetEndTimeRef.current = null;
+          handleTimerComplete();
+        }
+      }, 500);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -234,6 +345,7 @@ export function App() {
   const handleTimerComplete = () => {
     setIsRunning(false);
     setIsPaused(false);
+    targetEndTimeRef.current = null;
 
     if (mode === 'study') {
       if (settings.soundEnabled) {
@@ -254,14 +366,83 @@ export function App() {
   const handleBreakStartStudying = () => {
     stopBreakAlarmLoop();
     setIsBreakCompleteModalOpen(false);
-    handleSelectMode('study');
-    handleStartTimer();
+
+    // Reset break timer in modeStates so next break is fresh
+    const breakDur = settings.shortBreakMinutes * 60;
+    const resetBreak: TimerModeProgress = {
+      timeLeft: breakDur,
+      totalTime: breakDur,
+      isRunning: false,
+      isPaused: false,
+      targetEndTime: null,
+    };
+
+    // Switch to study mode and start (resuming paused or starting fresh)
+    const studyProgress = modeStates.study;
+    const studyLeft = studyProgress.timeLeft > 0 ? studyProgress.timeLeft : getDurationSeconds('study', settings, activeSubject);
+    const studyTotal = studyProgress.totalTime > 0 ? studyProgress.totalTime : getDurationSeconds('study', settings, activeSubject);
+    const end = Date.now() + studyLeft * 1000;
+    targetEndTimeRef.current = end;
+
+    setMode('study');
+    setTimeLeft(studyLeft);
+    setTotalTime(studyTotal);
+    setIsRunning(true);
+    setIsPaused(false);
+
+    setModeStates((prev) => ({
+      ...prev,
+      shortBreak: resetBreak,
+      study: {
+        ...prev.study,
+        timeLeft: studyLeft,
+        totalTime: studyTotal,
+        isRunning: true,
+        isPaused: false,
+        targetEndTime: end,
+      }
+    }));
   };
 
   const handleBreakDismiss = () => {
     stopBreakAlarmLoop();
     setIsBreakCompleteModalOpen(false);
-    handleSelectMode('study');
+
+    // Reset break timer in modeStates so next break is fresh
+    const breakDur = settings.shortBreakMinutes * 60;
+    const resetBreak: TimerModeProgress = {
+      timeLeft: breakDur,
+      totalTime: breakDur,
+      isRunning: false,
+      isPaused: false,
+      targetEndTime: null,
+    };
+
+    // Switch to study mode (staying paused or idle)
+    const studyProgress = modeStates.study;
+    const studyLeft = studyProgress.timeLeft > 0 ? studyProgress.timeLeft : getDurationSeconds('study', settings, activeSubject);
+    const studyTotal = studyProgress.totalTime > 0 ? studyProgress.totalTime : getDurationSeconds('study', settings, activeSubject);
+    const isStudyPaused = studyProgress.isPaused || (studyLeft < studyTotal);
+
+    setMode('study');
+    setTimeLeft(studyLeft);
+    setTotalTime(studyTotal);
+    setIsRunning(false);
+    setIsPaused(isStudyPaused);
+    targetEndTimeRef.current = null;
+
+    setModeStates((prev) => ({
+      ...prev,
+      shortBreak: resetBreak,
+      study: {
+        ...prev.study,
+        timeLeft: studyLeft,
+        totalTime: studyTotal,
+        isRunning: false,
+        isPaused: isStudyPaused,
+        targetEndTime: null,
+      }
+    }));
   };
 
   // Completion modal save
@@ -340,11 +521,39 @@ export function App() {
 
     setIsCompletionModalOpen(false);
 
+    // Reset study mode for the next session
+    const nextStudyDur = getDurationSeconds('study', settings, activeSubject);
+    const freshStudyState: TimerModeProgress = {
+      timeLeft: nextStudyDur,
+      totalTime: nextStudyDur,
+      isRunning: false,
+      isPaused: false,
+      targetEndTime: null,
+      subjectId: activeSubject?.id,
+    };
+
     // Switch to Short Break
-    setMode('shortBreak');
     const breakDur = settings.shortBreakMinutes * 60;
+    const freshBreakState: TimerModeProgress = {
+      timeLeft: breakDur,
+      totalTime: breakDur,
+      isRunning: false,
+      isPaused: false,
+      targetEndTime: null,
+    };
+
+    setMode('shortBreak');
     setTotalTime(breakDur);
     setTimeLeft(breakDur);
+    setIsRunning(false);
+    setIsPaused(false);
+    targetEndTimeRef.current = null;
+
+    setModeStates((prev) => ({
+      ...prev,
+      study: freshStudyState,
+      shortBreak: freshBreakState,
+    }));
 
     // If goal was just reached, sequence celebration modal & sound
     if (justReachedGoal && subjectToCelebrate) {
@@ -364,27 +573,80 @@ export function App() {
 
   // Timer controls
   const handleStartTimer = () => {
+    const end = Date.now() + timeLeft * 1000;
+    targetEndTimeRef.current = end;
     setIsRunning(true);
     setIsPaused(false);
+    setModeStates((prev) => ({
+      ...prev,
+      [mode]: {
+        ...prev[mode],
+        timeLeft,
+        totalTime,
+        isRunning: true,
+        isPaused: false,
+        targetEndTime: end,
+        subjectId: mode === 'study' ? activeSubject?.id : undefined,
+      }
+    }));
   };
 
   const handlePauseTimer = () => {
     setIsRunning(false);
     setIsPaused(true);
+    targetEndTimeRef.current = null;
+    setModeStates((prev) => ({
+      ...prev,
+      [mode]: {
+        ...prev[mode],
+        timeLeft,
+        totalTime,
+        isRunning: false,
+        isPaused: true,
+        targetEndTime: null,
+        subjectId: mode === 'study' ? activeSubject?.id : undefined,
+      }
+    }));
   };
 
   const handleResumeTimer = () => {
+    const end = Date.now() + timeLeft * 1000;
+    targetEndTimeRef.current = end;
     setIsRunning(true);
     setIsPaused(false);
+    setModeStates((prev) => ({
+      ...prev,
+      [mode]: {
+        ...prev[mode],
+        timeLeft,
+        totalTime,
+        isRunning: true,
+        isPaused: false,
+        targetEndTime: end,
+        subjectId: mode === 'study' ? activeSubject?.id : undefined,
+      }
+    }));
   };
 
   const handleResetTimer = (targetSub?: Subject) => {
     setIsRunning(false);
     setIsPaused(false);
+    targetEndTimeRef.current = null;
     const sub = targetSub || activeSubject;
     const dur = getDurationSeconds(mode, settings, sub);
     setTotalTime(dur);
     setTimeLeft(dur);
+    setModeStates((prev) => ({
+      ...prev,
+      [mode]: {
+        timeLeft: dur,
+        totalTime: dur,
+        isRunning: false,
+        isPaused: false,
+        targetEndTime: null,
+        subjectId: mode === 'study' ? sub?.id : undefined,
+      }
+    }));
   };
 
   const handleSkipTimer = () => {
@@ -397,13 +659,122 @@ export function App() {
   };
 
   const handleSelectMode = (newMode: TimerMode) => {
+    if (newMode === mode) return;
+
+    // 1. Snapshot and preserve current mode progress
+    const currentModeRemaining = isRunning && targetEndTimeRef.current
+      ? Math.max(0, Math.ceil((targetEndTimeRef.current - Date.now()) / 1000))
+      : timeLeft;
+
+    const currentPaused = isPaused || isRunning || (currentModeRemaining < totalTime && currentModeRemaining > 0);
+
+    const savedCurrentMode: TimerModeProgress = {
+      timeLeft: currentModeRemaining,
+      totalTime,
+      isRunning: false, // Always pause when changing modes
+      isPaused: currentPaused,
+      targetEndTime: null,
+      subjectId: mode === 'study' ? activeSubject?.id : undefined,
+    };
+
+    const updatedModes = {
+      ...modeStates,
+      [mode]: savedCurrentMode,
+    };
+
+    // 2. Prepare incoming mode
+    const incomingModeProgress = updatedModes[newMode];
+    let nextTotalTime = incomingModeProgress?.totalTime;
+    let nextTimeLeft = incomingModeProgress?.timeLeft;
+    let nextIsPaused = incomingModeProgress?.isPaused ?? false;
+
+    // If incoming mode has no valid duration, initialize it from settings/subject
+    if (!nextTotalTime || nextTotalTime <= 0) {
+      const dur = getDurationSeconds(newMode, settings, activeSubject);
+      nextTotalTime = dur;
+      nextTimeLeft = dur;
+      nextIsPaused = false;
+    }
+
+    // 3. Switch React active timer state
     setIsRunning(false);
-    setIsPaused(false);
+    setIsPaused(nextIsPaused);
+    targetEndTimeRef.current = null;
     setMode(newMode);
-    const dur = getDurationSeconds(newMode, settings, activeSubject);
-    setTotalTime(dur);
-    setTimeLeft(dur);
+    setTotalTime(nextTotalTime);
+    setTimeLeft(nextTimeLeft);
+
+    setModeStates({
+      ...updatedModes,
+      [newMode]: {
+        timeLeft: nextTimeLeft,
+        totalTime: nextTotalTime,
+        isRunning: false,
+        isPaused: nextIsPaused,
+        targetEndTime: null,
+        subjectId: newMode === 'study' ? activeSubject?.id : undefined,
+      }
+    });
   };
+
+  // Sync timer state changes to localStorage
+  useEffect(() => {
+    const currentModeRemaining = isRunning && targetEndTimeRef.current
+      ? Math.max(0, Math.ceil((targetEndTimeRef.current - Date.now()) / 1000))
+      : timeLeft;
+
+    const currentModeData: TimerModeProgress = {
+      timeLeft: currentModeRemaining,
+      totalTime,
+      isRunning,
+      isPaused,
+      targetEndTime: isRunning ? targetEndTimeRef.current : null,
+      subjectId: mode === 'study' ? selectedSubjectId : undefined,
+    };
+
+    const fullState: StoredTimerState = {
+      currentMode: mode,
+      goal,
+      modes: {
+        ...modeStates,
+        [mode]: currentModeData,
+      },
+    };
+
+    saveStoredTimer(fullState);
+  }, [mode, isRunning, isPaused, totalTime, modeStates, goal, selectedSubjectId]);
+
+  // Window beforeunload listener to catch exact second on browser refresh
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const currentRemaining = isRunning && targetEndTimeRef.current
+        ? Math.max(0, Math.ceil((targetEndTimeRef.current - Date.now()) / 1000))
+        : timeLeft;
+
+      const currentModeData: TimerModeProgress = {
+        timeLeft: currentRemaining,
+        totalTime,
+        isRunning,
+        isPaused,
+        targetEndTime: isRunning ? targetEndTimeRef.current : null,
+        subjectId: mode === 'study' ? selectedSubjectId : undefined,
+      };
+
+      const fullState: StoredTimerState = {
+        currentMode: mode,
+        goal,
+        modes: {
+          ...modeStates,
+          [mode]: currentModeData,
+        },
+      };
+
+      saveStoredTimer(fullState);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [mode, timeLeft, totalTime, isRunning, isPaused, modeStates, goal, selectedSubjectId]);
 
   // Subject actions
   const handleAddSubject = (newSub: Omit<Subject, 'id' | 'sessionsCount' | 'totalMinutes' | 'status'>) => {
@@ -500,11 +871,23 @@ export function App() {
     setActiveTab('dashboard');
     setIsRunning(false);
     setIsPaused(false);
+    targetEndTimeRef.current = null;
     setMode('study');
     const targetSub = subjects.find(s => s.id === subjectId);
     const dur = getDurationSeconds('study', settings, targetSub);
     setTotalTime(dur);
     setTimeLeft(dur);
+    setModeStates((prev) => ({
+      ...prev,
+      study: {
+        timeLeft: dur,
+        totalTime: dur,
+        isRunning: false,
+        isPaused: false,
+        targetEndTime: null,
+        subjectId,
+      }
+    }));
   };
 
   const handleRandomSelectAndStart = (subjectId: string) => {
@@ -514,10 +897,23 @@ export function App() {
     setMode('study');
     const targetSub = subjects.find(s => s.id === subjectId);
     const dur = getDurationSeconds('study', settings, targetSub);
+    const end = Date.now() + dur * 1000;
+    targetEndTimeRef.current = end;
     setTotalTime(dur);
     setTimeLeft(dur);
     setIsRunning(true);
     setIsPaused(false);
+    setModeStates((prev) => ({
+      ...prev,
+      study: {
+        timeLeft: dur,
+        totalTime: dur,
+        isRunning: true,
+        isPaused: false,
+        targetEndTime: end,
+        subjectId,
+      }
+    }));
   };
 
   const handleSelectSubject = (id: string) => {
@@ -552,10 +948,18 @@ export function App() {
   // Settings actions
   const handleSaveSettings = (newSettings: TimerSettings) => {
     setSettings(newSettings);
-    if (!isRunning && !isPaused) {
+    if (!isRunning && !isPaused && timeLeft === totalTime) {
       const dur = getDurationSeconds(mode, newSettings, activeSubject);
       setTotalTime(dur);
       setTimeLeft(dur);
+      setModeStates((prev) => ({
+        ...prev,
+        [mode]: {
+          ...prev[mode],
+          timeLeft: dur,
+          totalTime: dur,
+        }
+      }));
     }
 
     // Save to MySQL backend
@@ -590,6 +994,7 @@ export function App() {
     setIsLogoutModalOpen(false);
     // 1. Wipe all saved account data from local storage
     clearAllStoredUserData();
+    clearStoredTimer();
     setAuthToken(null);
 
     // 2. Reset React memory state so previous user data is not retained
@@ -603,6 +1008,32 @@ export function App() {
     setTimeLeft(DEFAULT_SETTINGS.studyMinutes * 60);
     setIsRunning(false);
     setIsPaused(false);
+    targetEndTimeRef.current = null;
+    setGoal('');
+    setMode('study');
+    setModeStates({
+      study: {
+        timeLeft: DEFAULT_SETTINGS.studyMinutes * 60,
+        totalTime: DEFAULT_SETTINGS.studyMinutes * 60,
+        isRunning: false,
+        isPaused: false,
+        targetEndTime: null,
+      },
+      shortBreak: {
+        timeLeft: DEFAULT_SETTINGS.shortBreakMinutes * 60,
+        totalTime: DEFAULT_SETTINGS.shortBreakMinutes * 60,
+        isRunning: false,
+        isPaused: false,
+        targetEndTime: null,
+      },
+      longBreak: {
+        timeLeft: DEFAULT_SETTINGS.longBreakMinutes * 60,
+        totalTime: DEFAULT_SETTINGS.longBreakMinutes * 60,
+        isRunning: false,
+        isPaused: false,
+        targetEndTime: null,
+      },
+    });
     setActiveTab('dashboard');
   };
 

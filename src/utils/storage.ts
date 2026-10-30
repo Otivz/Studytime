@@ -1,5 +1,5 @@
 import type { Subject } from '../types/subject';
-import type { SessionRecord } from '../types/session';
+import type { SessionRecord, TimerMode } from '../types/session';
 import type { TimerSettings, DailyGoal } from '../types/settings';
 import type { User } from '../types/auth';
 
@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   DAILY_GOAL: 'study_notebook_goal',
   ACTIVE_SUBJECT: 'study_notebook_active_subject_id',
   USER: 'study_notebook_current_user',
+  TIMER: 'study_notebook_timer_state',
 };
 
 // No mock data — fresh users start with nothing until they add subjects
@@ -163,3 +164,49 @@ export function clearAllStoredUserData(): void {
     console.error('Failed to clear stored data', e);
   }
 }
+
+export interface TimerModeProgress {
+  timeLeft: number;
+  totalTime: number;
+  isRunning: boolean;
+  isPaused: boolean;
+  targetEndTime: number | null;
+  subjectId?: string;
+}
+
+export interface StoredTimerState {
+  currentMode: TimerMode;
+  goal?: string;
+  modes: {
+    study: TimerModeProgress;
+    shortBreak: TimerModeProgress;
+    longBreak: TimerModeProgress;
+  };
+}
+
+export function loadStoredTimer(): StoredTimerState | null {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.TIMER);
+    if (data) return JSON.parse(data);
+  } catch (e) {
+    console.error('Failed to load timer state', e);
+  }
+  return null;
+}
+
+export function saveStoredTimer(timerState: StoredTimerState): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.TIMER, JSON.stringify(timerState));
+  } catch (e) {
+    console.error('Failed to save timer state', e);
+  }
+}
+
+export function clearStoredTimer(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.TIMER);
+  } catch (e) {
+    console.error('Failed to clear timer state', e);
+  }
+}
+

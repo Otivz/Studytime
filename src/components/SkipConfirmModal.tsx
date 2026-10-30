@@ -4,19 +4,24 @@ import { IoPlayForwardOutline, IoCloseOutline } from 'react-icons/io5';
 interface SkipConfirmModalProps {
   isOpen: boolean;
   mode: 'study' | 'shortBreak' | 'longBreak';
+  elapsedMinutes?: number;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export const SkipConfirmModal: FC<SkipConfirmModalProps> = ({ isOpen, mode, onConfirm, onCancel }) => {
+export const SkipConfirmModal: FC<SkipConfirmModalProps> = ({ isOpen, mode, elapsedMinutes, onConfirm, onCancel }) => {
   if (!isOpen) return null;
 
   const isStudy = mode === 'study';
-  const title = isStudy ? 'Skip to Completion?' : 'End Break Early?';
+  const title = isStudy ? 'Finish Session Early?' : 'End Break Early?';
   const description = isStudy
-    ? 'Ready to wrap up? This will finish your current timer and open your session completion note.'
+    ? (elapsedMinutes !== undefined
+        ? `You've studied for ${elapsedMinutes} ${elapsedMinutes === 1 ? 'minute' : 'minutes'}. Wrap up now and record this progress in your daily log?`
+        : 'Ready to wrap up? This will finish your current timer and record your studied time.')
     : 'Ready to get back to work? This will finish your break timer early.';
-  const confirmText = isStudy ? 'Complete Session' : 'End Break';
+  const confirmText = isStudy
+    ? (elapsedMinutes !== undefined ? `Record ${elapsedMinutes}m & Finish` : 'Complete Session')
+    : 'End Break';
   const cancelText = isStudy ? 'Keep Studying' : 'Stay on Break';
 
   return (

@@ -15,6 +15,7 @@ import { GoalCelebrationModal } from './components/GoalCelebrationModal';
 import { BreakCompleteModal } from './components/BreakCompleteModal';
 import { LogoutModal } from './components/LogoutModal';
 import { SkipConfirmModal } from './components/SkipConfirmModal';
+import { ResetConfirmModal } from './components/ResetConfirmModal';
 
 import type { Subject } from './types/subject';
 import type { SessionRecord, TimerMode } from './types/session';
@@ -179,6 +180,9 @@ export function App() {
   const [isBreakCompleteModalOpen, setIsBreakCompleteModalOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetElapsedMinutes, setResetElapsedMinutes] = useState(0);
+  const [completedDurationMinutes, setCompletedDurationMinutes] = useState(0);
 
   const activeSubject = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
 
@@ -342,12 +346,21 @@ export function App() {
     };
   }, [isRunning, mode, settings, activeSubject, goal]);
 
-  const handleTimerComplete = () => {
+  const handleTimerComplete = (isEarlyEnd = false) => {
     setIsRunning(false);
     setIsPaused(false);
     targetEndTimeRef.current = null;
 
     if (mode === 'study') {
+      const elapsedSeconds = Math.max(0, totalTime - timeLeft);
+      // If ended early or skipped, record actual elapsed minutes (minimum 1m).
+      // If timer ran to 0 (normal finish), record totalTime / 60.
+      const actualMinutes = isEarlyEnd || timeLeft > 0
+        ? Math.max(1, Math.round(elapsedSeconds / 60))
+        : Math.max(1, Math.round(totalTime / 60));
+
+      setCompletedDurationMinutes(actualMinutes);
+
       if (settings.soundEnabled) {
         playStudyCompleteSound();
       }
@@ -446,8 +459,12 @@ export function App() {
   };
 
   // Completion modal save
-  const handleSaveCompletedSession = (notes: string) => {
-    const durationMins = Math.round(totalTime / 60);
+  const handleSaveCompletedSession = (notes: string, overrideMinutes?: number) => {
+    const durationMins = overrideMinutes !== undefined && overrideMinutes > 0
+      ? overrideMinutes
+      : (completedDurationMinutes > 0
+          ? completedDurationMinutes
+          : Math.max(1, Math.round((totalTime - timeLeft) / 60)));
 
     const newRecord: SessionRecord = {
       id: `sess-${Date.now()}`,
@@ -628,7 +645,7 @@ export function App() {
     }));
   };
 
-  const handleResetTimer = (targetSub?: Subject) => {
+  const handleDirectReset = (targetSub?: Subject) => {
     setIsRunning(false);
     setIsPaused(false);
     targetEndTimeRef.current = null;
@@ -649,13 +666,37 @@ export function App() {
     }));
   };
 
+  const handleResetTimer = (targetSub?: Subject) => {
+    const elapsedSeconds = Math.max(0, totalTime - timeLeft);
+    const elapsedMinutes = Math.round(elapsedSeconds / 60);
+
+    // If studying and at least 1 minute was completed, give user the option to save their progress
+    if (mode === 'study' && elapsedMinutes >= 1) {
+      setResetElapsedMinutes(elapsedMinutes);
+      setIsResetModalOpen(true);
+    } else {
+      handleDirectReset(targetSub);
+    }
+  };
+
+  const handleSaveAndReset = () => {
+    setIsResetModalOpen(false);
+    handleSaveCompletedSession('', resetElapsedMinutes);
+    handleDirectReset();
+  };
+
+  const handleDiscardAndReset = () => {
+    setIsResetModalOpen(false);
+    handleDirectReset();
+  };
+
   const handleSkipTimer = () => {
     setIsSkipModalOpen(true);
   };
 
   const handleConfirmSkip = () => {
     setIsSkipModalOpen(false);
-    handleTimerComplete();
+    handleTimerComplete(true);
   };
 
   const handleSelectMode = (newMode: TimerMode) => {
@@ -1141,7 +1182,7 @@ export function App() {
       <CompletionModal
         isOpen={isCompletionModalOpen}
         subject={activeSubject}
-        durationMinutes={Math.round(totalTime / 60)}
+        durationMinutes={completedDurationMinutes || Math.max(1, Math.round((totalTime - timeLeft) / 60))}
         goal={goal}
         onSave={handleSaveCompletedSession}
         onSkip={handleSkipCompletedModal}
@@ -1181,8 +1222,18 @@ export function App() {
       <SkipConfirmModal
         isOpen={isSkipModalOpen}
         mode={mode}
+        elapsedMinutes={mode === 'study' ? Math.max(1, Math.round((totalTime - timeLeft) / 60)) : undefined}
         onConfirm={handleConfirmSkip}
         onCancel={() => setIsSkipModalOpen(false)}
+      />
+
+      {/* Reset with Progress Confirmation Modal */}
+      <ResetConfirmModal
+        isOpen={isResetModalOpen}
+        elapsedMinutes={resetElapsedMinutes}
+        onSaveAndReset={handleSaveAndReset}
+        onDiscardAndReset={handleDiscardAndReset}
+        onCancel={() => setIsResetModalOpen(false)}
       />
 
     </div>
